@@ -2,11 +2,7 @@ var express = require('express'),
     app = express(),
     http = require('http'),
     server = http.createServer(app),
-    io = require('socket.io').listen(server)/*,
-    dgram = require('dgram'),
-    client = dgram.createSocket('udp4'),
-    serverPort = 8042,
-    serverAddress = '192.168.4.1'*/;
+    io = require('socket.io').listen(server);
 
 var serialport = require('serialport');
 var SerialPort = serialport.SerialPort; // localize object constructor
@@ -16,34 +12,93 @@ var serialPort = new SerialPort('COM3', {
     parser: serialport.parsers.readline('\n')
 });
 
-function reconnect() {
-    console.log('reconnecting');
-    serialPort.open(function (error) {
-        if (error) {
-            console.log(error);
-            setTimeout(reconnect, 1000);
-        }
-    })
-}
+var speed = 0,
+    step = 0.01,
+    max = 0.5,
+    min = 0,
+    angle = 0,
+    goState = 0,
+    lastTime = Date.now();
 
 serialPort.on('open', function () {
     console.log('open');
-    /*serialPort.on('data', function (data) {
+    serialPort.on('data', function (data) {
         console.log('data received: ' + data);
-    });*/
+        
+        var currentTime = Date.now();
+        
+        console.log(currentTime - lastTime);
+        
+        //serialPort.write('adc\n');
+        
+        lastTime = currentTime;
+    });
+
+    //drive(0, 0, 0);
+    
+    serialPort.write('adc\n');
+
+    setInterval(function () {
+        speed += step;
+
+        if (step > 0 && speed >= max) {
+            step = -step;
+            //speed = max;
+        } else if (step < 0 && speed <= min) {
+            step = -step;
+            //speed = min
+        }
+
+        //console.log(speed);
+
+        /*serialPort.write('speeds:' + speed + ':' + speed + ':' + speed + ':' + speed + ':' + 0 + '\n', function (err, results) {
+            //console.log('err ' + err);
+            //console.log('results ' + results);
+        });*/
+        
+        /*if (goState) {
+            goState = 0;
+        } else {
+            goState = 1;
+        }*/
+        
+        //serialPort.write('go:' + goState + '\n');
+        
+
+        angle += 0.1;
+
+        if (angle >= 2 * Math.PI) {
+            angle = 0;
+        }
+        
+        
+        drive(0, 0, 0);
+        //drive(speed, angle, 0)
+        //drive(Math.random() * 0.5, Math.random() * 2 * Math.PI, 0)
+    }, 10);
+    
+    setInterval(function () {
+        if (goState) {
+            goState = 0;
+        } else {
+            goState = 1;
+        }
+    
+        //serialPort.write('adc\n');
+        serialPort.write('go:' + goState + '\n');
+    }, 100);
 });
 
 serialPort.on('close', function () {
     console.log('close');
 });
-
+    
 serialPort.on('error', function () {
     console.log('error');
 });
 
 serialPort.on('disconnect', function () {
     console.log('disconnect');
-    reconnect();
 });
 
 var pidFreq = 60,
@@ -60,11 +115,11 @@ var pidFreq = 60,
     xSpeed = 0,
     ySpeed = 0,
     rotation = 0,
-	wheel1Speed = 0,
-	wheel2Speed = 0,
-	wheel3Speed = 0,
-	wheel4Speed = 0,
-	dribblerSpeed = 0;
+    wheel1Speed = 0,
+    wheel2Speed = 0,
+    wheel3Speed = 0,
+    wheel4Speed = 0,
+    dribblerSpeed = 0;
 
 app.configure(function () {
     app.use(express.static(__dirname + '/public'));
@@ -85,11 +140,6 @@ io.sockets.on('connection', function (socket) {
         dribbler(data.speed || 0);
     });
 
-    socket.on('dribbler-limits', function (data) {
-        data = data || {};
-        dribblerLimits(data);
-    });
-
     socket.on('kick', function (data) {
         var strength = data.strength || 500;
         kick(strength);
@@ -103,7 +153,7 @@ function drive(speed, angle, rotation) {
     wheel3Speed = Math.round(speedMetricToRobot(wheelSpeed(speed, angle, wheel3Angle)) + rotationalSpeed);
     wheel4Speed = Math.round(speedMetricToRobot(wheelSpeed(speed, angle, wheel4Angle)) + rotationalSpeed);
     speeds = [wheel1Speed, wheel2Speed, wheel3Speed, wheel4Speed];
-    console.log(wheel1Speed, wheel2Speed, wheel3Speed, wheel4Speed);
+    //console.log(wheel1Speed, wheel2Speed, wheel3Speed, wheel4Speed);
     //var message = new Buffer('speeds:' + wheel1Speed + ':' + wheel2Speed + ':' + wheel3Speed + ':' + wheel4Speed + ':' + dribblerSpeed);
     //client.send(message, 0, message.length, serverPort, serverAddress);
     serialPort.write('speeds:' + wheel1Speed + ':' + wheel2Speed + ':' + wheel3Speed + ':' + wheel4Speed + ':' + dribblerSpeed + '\n');
@@ -114,16 +164,9 @@ function dribbler(speed) {
     if (dribblerSpeed < -255) dribblerSpeed = 255;
     else if (dribblerSpeed > 255) dribblerSpeed = 255;
     console.log('Dribbler:', dribblerSpeed);
-	//var message = new Buffer('speeds:' + wheel1Speed + ':' + wheel2Speed + ':' + wheel3Speed + ':' + wheel4Speed + ':' + dribblerSpeed);
+    //var message = new Buffer('speeds:' + wheel1Speed + ':' + wheel2Speed + ':' + wheel3Speed + ':' + wheel4Speed + ':' + dribblerSpeed);
     //client.send(message, 0, message.length, serverPort, serverAddress);
     serialPort.write('speeds:' + wheel1Speed + ':' + wheel2Speed + ':' + wheel3Speed + ':' + wheel4Speed + ':' + dribblerSpeed + '\n');
-}
-
-function dribblerLimits(limits) {
-    var cmd = 'servos:' + parseFloat(limits.lower).toFixed(3) + ':' + parseFloat(limits.higher).toFixed(3);
-
-    console.log(cmd)
-    serialPort.write(cmd + '\n');
 }
 
 function kick(strength) {

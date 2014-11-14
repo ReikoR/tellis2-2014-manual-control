@@ -15,15 +15,47 @@ $(document).ready(function () {
         dribblerSpeed = 0,
         dribblerOn = false,
         prevSentDribblerSpeed = 0,
+        dribblerLimitsLower = 0.075,
+        dribblerLimitsHigher = 0.075,
+        dribblerLimitMin = 0.03,
+        dribblerLimitMax = 0.125,
+        dribblerLimitPeriod = 200,
+        dribblerRepeatInterval = null,
+        dribblerLimitLowerChange = 0,
+        dribblerLimitHigherChange = 0,
+        lastDribblerLimitTime = Date.now(),
+        dribblerLimitChangingEnabled = false,
         backButton = false,
-        driveTimeout,
-		zAngle,
+        driveTimeout = null,
+		zAngle = 0,
 		rotationChange = 0;
 
     window.maxSpeed = 2;
     window.maxRotation = 4;
     window.kickStrength = 5000;
     window.socket = io.connect();
+
+    dribblerRepeatInterval = setInterval(function () {
+        if (!(dribblerLimitLowerChange === 0 && dribblerLimitHigherChange === 0)) {
+            dribblerLimitsLower += dribblerLimitLowerChange;
+
+            if (dribblerLimitsLower > dribblerLimitMax) {
+                dribblerLimitsLower = dribblerLimitMax;
+            } else if (dribblerLimitsLower < dribblerLimitMin) {
+                dribblerLimitsLower = dribblerLimitMin;
+            }
+
+            dribblerLimitsHigher += dribblerLimitHigherChange;
+
+            if (dribblerLimitsHigher > dribblerLimitMax) {
+                dribblerLimitsHigher = dribblerLimitMax;
+            } else if (dribblerLimitsHigher < dribblerLimitMin) {
+                dribblerLimitsHigher = dribblerLimitMin;
+            }
+
+            dribblerLimits();
+        }
+    }, dribblerLimitPeriod);
 
     $(window).blur(function() {
         console.log('window blur');
@@ -78,6 +110,18 @@ $(document).ready(function () {
             socket.emit('dribbler', {speed: -speedDribbler});
         }
         $('#dribbler').html('Dribbler: ' + speedDribbler);
+    }
+
+    function dribblerLimits() {
+        //var currentDribblerLimitTime = Date.now();
+
+        //if (currentDribblerLimitTime - lastDribblerLimitTime > dribblerLimitPeriod) {
+            //lastDribblerLimitTime = currentDribblerLimitTime;
+            console.log('dribblerLimitsLower', dribblerLimitsLower);
+            console.log('dribblerLimitsHigher', dribblerLimitsHigher);
+            $('#dribbler-limits').html('Dribbler limits: ' + dribblerLimitsLower.toFixed(3) + ' ' + dribblerLimitsHigher.toFixed(3));
+            socket.emit('dribbler-limits', {lower: dribblerLimitsLower.toFixed(3), higher: dribblerLimitsHigher.toFixed(3)});
+        //}
     }
 
     function kick() {
@@ -150,17 +194,31 @@ $(document).ready(function () {
 				console.log('maxSpeed', maxSpeed);
 				console.log('maxRotation', maxRotation);
                 break;
+            /*case 'LEFT_STICK':
+                break;
+            case 'RIGHT_STICK':
+                break;*/
         }
     });
 
     gamepad.bind(Gamepad.Event.BUTTON_UP, function(e) {
         console.log(e);
         switch(e.control) {
-            case 5:
+            case 'RIGHT_TOP_SHOULDER':
                 $('#kicker').html('');
-                break
+                break;
             case 8:
                 backButton = false;
+                break;
+            /*case 'LEFT_STICK':
+                break;
+            case 'RIGHT_STICK':
+                break;*/
+            case 'FACE_4':
+                dribblerLimitChangingEnabled = !dribblerLimitChangingEnabled;
+
+                $('#dribbler-limits').css({'font-weight': dribblerLimitChangingEnabled ? 'bold': 'normal'});
+
                 break;
         }
     });
@@ -170,16 +228,42 @@ $(document).ready(function () {
         var prevDribblerSpeed = dribblerSpeed;
         switch(e.axis) {
             case 'LEFT_STICK_X':
-                $('#rotate').html('Rotate: ' + e.value);
-                rotation = e.value * maxRotation;
+                if (!dribblerLimitChangingEnabled) {
+                    $('#rotate').html('Rotate: ' + e.value);
+                    rotation = e.value * maxRotation;
+                }
+                break;
+            case 'LEFT_STICK_Y':
+                if (dribblerLimitChangingEnabled) {
+                    //console.log(e.value);
+                    dribblerLimitLowerChange = -e.value * 0.01;
+
+                    if (Math.abs(dribblerLimitLowerChange) < 0.001) {
+                        dribblerLimitLowerChange = 0;
+                    }
+
+                    //dribblerLimits();
+                }
                 break;
             case 'RIGHT_STICK_X':
-                $('#side').html('X: ' + e.value);
-                xSpeed = e.value * maxSpeed;
+                if (!dribblerLimitChangingEnabled) {
+                    $('#side').html('X: ' + e.value);
+                    xSpeed = e.value * maxSpeed;
+                }
                 break;
             case 'RIGHT_STICK_Y':
-                $('#forward').html('Y: ' + (-e.value));
-                ySpeed = e.value * maxSpeed;
+                if (!dribblerLimitChangingEnabled) {
+                    $('#forward').html('Y: ' + (-e.value));
+                    ySpeed = e.value * maxSpeed;
+                } else {
+                    dribblerLimitHigherChange = -e.value * 0.01;
+
+                    if (Math.abs(dribblerLimitHigherChange) < 0.001) {
+                        dribblerLimitHigherChange = 0;
+                    }
+
+                    //dribblerLimits();
+                }
                 break;
             case 'LEFT_BOTTOM_SHOULDER':
                 dribblerSpeed = 255 * (0.95 - e.value);
